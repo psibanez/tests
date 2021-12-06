@@ -1,0 +1,1 @@
+LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libv4l/v4l1compat.so fswebcam -v -d  /dev/video1 -r 640x480 -l 5 image.jpg
