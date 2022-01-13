@@ -1,11 +1,47 @@
-import pyrealsense2.pyrealsense2 as rs
+#!/usr/bin/python3
+import pyrealsense2 as rs
 import numpy as np
 import cv2
 import copy
 import math
 
+
+import jetson.inference
+import jetson.utils
+from depthnet_utils import depthBuffers
+import argparse
+import sys
+
 class ARC:
     def __init__(self):
+       
+        # parse the command line
+        parser = argparse.ArgumentParser(description="Mono depth estimation on a video/image stream using depthNet DNN.", 
+                                         formatter_class=argparse.RawTextHelpFormatter, epilog=jetson.inference.depthNet.Usage() +
+                                         jetson.utils.videoSource.Usage() + jetson.utils.videoOutput.Usage() + jetson.utils.logUsage())
+
+        parser.add_argument("input_URI", type=str, default="", nargs='?', help="URI of the input stream")
+        parser.add_argument("output_URI", type=str, default="", nargs='?', help="URI of the output stream")
+        parser.add_argument("--network", type=str, default="fcn-mobilenet", help="pre-trained model to load, see below for options")
+        parser.add_argument("--visualize", type=str, default="input,depth", help="visualization options (can be 'input' 'depth' 'input,depth'")
+        parser.add_argument("--depth-size", type=float, default=1.0, help="scales the size of the depth map visualization, as a percentage of the input size (default is 1.0)")
+        parser.add_argument("--filter-mode", type=str, default="linear", choices=["point", "linear"], help="filtering mode used during visualization, options are:\n  'point' or 'linear' (default: 'linear')")
+        parser.add_argument("--colormap", type=str, default="viridis-inverted", help="colormap to use for visualization (default is 'viridis-inverted')",
+                                          choices=["inferno", "inferno-inverted", "magma", "magma-inverted", "parula", "parula-inverted", 
+                                                   "plasma", "plasma-inverted", "turbo", "turbo-inverted", "viridis", "viridis-inverted"])
+
+        try:
+            opt = parser.parse_known_args()[0]
+        except:
+            print("")
+            parser.print_help()
+            sys.exit(0)        
+            
+        # load the segmentation network
+        net = jetson.inference.depthNet(opt.network, sys.argv)
+
+        # create buffer manager
+        self.buffers = depthBuffers(opt)
         # Configure depth and color streams
         self.pipeline = rs.pipeline()
         config = rs.config()
@@ -40,9 +76,23 @@ class ARC:
         align = rs.align(align_to)
         for i in range(10):
             self.pipeline.wait_for_frames()
+            
         while True:
             frames = self.pipeline.wait_for_frames()
+          
             aligned_frames = align.process(frames)
+            
+
+            #################
+            img_input = aligned_frames.get_color_frame()
+            # allocate buffers for this size image
+            self.buffers.Alloc(img_input.shape, img_input.format)
+
+            # process the mono depth and visualize
+            net.Process(img_input, self.buffers.depth, opt.colormap, opt.filter_mode)
+            #################            
+            
+            
             color_frame = aligned_frames.get_color_frame()
             depth_frame = aligned_frames.get_depth_frame()
 
@@ -79,6 +129,7 @@ class ARC:
 
     def draw(self, event,x,y,flags,params):
         img = copy.copy(self.img_copy)
+        
         #print event,x,y,flags,params
         if(event==1):
             self.ix = x
@@ -98,7 +149,6 @@ class ARC:
         fontColor = (0, 0, 0)
         lineType = 2
 
- 
         length = self.calculate_length(x, y)
         depth = self.get_depth_meter(x, y)
         
@@ -129,6 +179,7 @@ class ARC:
             math.pow(point1[0] - point2[0], 2) + math.pow(point1[1] - point2[1],2) + math.pow(
                 point1[2] - point2[2], 2))
         return length
+
 
 if __name__ == '__main__':
     ARC().video()

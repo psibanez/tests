@@ -1,0 +1,2 @@
+deepstream-app -c /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/source8_1080p_dec_infer-resnet_tracker_tiled_display_fp16_nano.txt       OK
+
